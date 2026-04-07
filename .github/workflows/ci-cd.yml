@@ -10,12 +10,14 @@ env:
   REGISTRY: docker.io
   BACKEND_IMAGE: nexah/ssl-certs-monitor-backend
   FRONTEND_IMAGE: nexah/ssl-certs-monitor-frontend
+  # On définit la base de la version ici. 
+  # Le matricule s'incrémentera automatiquement : 1.0.1, 1.0.2, etc.
+  VERSION_TAG: 1.0.${{ github.run_number }}
 
 jobs:
   build-and-push:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    # Condition : Ne s'exécute que sur un push vers main
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -39,7 +41,7 @@ jobs:
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:latest
-            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.BACKEND_IMAGE }}:${{ env.VERSION_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -51,7 +53,7 @@ jobs:
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
-            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE }}:${{ env.VERSION_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
