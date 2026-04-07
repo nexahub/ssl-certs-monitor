@@ -17,66 +17,107 @@ export interface Certificate {
   expiry_date?: string;
   error_message?: string;
 }
+
 type SortKey = 'days_left' | 'domain';
 type SortDirection = 'asc' | 'desc';
 
-const API_URL = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL 
-  ? process.env.NEXT_PUBLIC_API_URL 
+const API_URL = typeof window !== 'undefined' && process.env.NXH_API_URL
+  ? process.env.NXH_API_URL
   : (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000");
 
 // --- Sous-Composant : Badge de Statut ---
 const StatusBadge = ({ status }: { status: Certificate['status'] }) => {
     const colorClasses = {
-        'OK': 'bg-green-500/20 text-green-400 border-green-500/30',
-        'Expire bientôt': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 animate-pulse',
-        'Expiré': 'bg-red-500/20 text-red-400 border-red-500/30',
-        'Erreur': 'bg-red-500/20 text-red-400 border-red-500/30',
-        'En attente': 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-        'Vérification...': 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-spin',
-      };
-      return <span className={`px-3 py-1 text-xs font-medium rounded-full border ${colorClasses[status]}`}>{status}</span>;
+        'OK': 'bg-green-500/10 text-green-400 border-green-500/20',
+        'Expire bientôt': 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse',
+        'Expiré': 'bg-red-500/10 text-red-400 border-red-500/20',
+        'Erreur': 'bg-red-500/10 text-red-400 border-red-500/20',
+        'En attente': 'bg-slate-700/50 text-slate-400 border-slate-700',
+        'Vérification...': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    };
+    return <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full border ${colorClasses[status]}`}>{status}</span>;
 };
 
-// --- Variantes d'animation ---
-const containerVariants: Variants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.08 } } };
-const itemVariants: Variants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 100 } } };
-
 // --- Sous-Composant : Carte Certificat ---
-const CertificateCard = ({ cert, onCardClick, onDeleteClick }: { cert: Certificate, onCardClick: () => void, onDeleteClick: (domain: string) => void }) => (
-    <motion.div variants={itemVariants} layout onClick={onCardClick} className="cursor-pointer bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-xl p-5 flex flex-col justify-between transition-all hover:border-blue-500/50 hover:-translate-y-1">
-        <div>
-            <div className="flex justify-between items-start mb-4">
-                <h2 className="font-bold text-lg text-slate-200 break-all pr-2">{cert.domain}</h2>
+const CertificateCard = ({ cert, onCardClick, onDeleteClick }: { cert: Certificate, onCardClick: () => void, onDeleteClick: (domain: string) => void }) => {
+    
+    // Calcul de secours si days_left est absent de l'API
+    const daysRemaining = useMemo(() => {
+        if (cert.days_left !== undefined) return cert.days_left;
+        if (!cert.expiry_date) return 0;
+        
+        const expiry = new Date(cert.expiry_date).getTime();
+        const now = new Date().getTime();
+        const diff = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+        return diff > 0 ? diff : 0;
+    }, [cert.days_left, cert.expiry_date]);
+
+    const isExpiringSoon = daysRemaining <= 15 && cert.status !== 'Expiré';
+
+    return (
+        <motion.div 
+            layout
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            onClick={onCardClick} 
+            className={`group cursor-pointer bg-[#111827] border rounded-2xl p-6 flex flex-col transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] ${
+                isExpiringSoon 
+                    ? 'border-red-500/40 shadow-[0_0_20px_rgba(239,68,68,0.1)]' 
+                    : 'border-slate-800/60 hover:border-blue-500/40'
+            }`}
+        >
+            <div className="flex justify-between items-start mb-6">
+                <div className="space-y-1">
+                    <h2 className="font-black text-xl text-white tracking-tight group-hover:text-blue-400 transition-colors">{cert.domain}</h2>
+                    <p className="text-[10px] text-slate-500 font-bold tracking-[0.2em] uppercase">Domaine Sécurisé</p>
+                </div>
                 <div className="flex items-center gap-2">
                     <StatusBadge status={cert.status} />
-                    <button onClick={(e) => { e.stopPropagation(); onDeleteClick(cert.domain); }} className="text-slate-500 hover:text-red-500 transition-colors z-10 flex-shrink-0" aria-label={`Supprimer ${cert.domain}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteClick(cert.domain); }} 
+                        className="p-2 rounded-lg text-slate-600 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
                 </div>
             </div>
-        </div>
-        {(cert.status !== 'Erreur' && cert.status !== 'En attente' && cert.status !== 'Vérification...') ? (
-            <div className="flex items-end justify-between mt-4">
-                <div><p className="text-sm text-slate-400">Expiration</p><p className="text-xs text-slate-500">{cert.expiry_date ? new Date(cert.expiry_date).toLocaleDateString('fr-FR') : 'Inconnue'}</p></div>
-                {cert.days_left !== undefined && <ExpirationGauge daysLeft={cert.days_left} />}
-            </div>
-        ) : (<div className="bg-slate-800/50 p-3 rounded-lg text-xs text-slate-300 flex items-center justify-center h-full mt-4 min-h-[52px]">{cert.status === 'En attente' ? 'En attente de la vérification...' : cert.status === 'Vérification...' ? 'Vérification en cours...' : cert.error_message}</div>)}
-    </motion.div>
-);
 
-// --- Sous-Composant : Carte "Fantôme" ---
-const SkeletonCard = () => (
-    <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-xl p-5 animate-pulse">
-        <div className="flex justify-between items-start mb-4"><div className="h-6 w-3/5 rounded bg-slate-700"></div><div className="h-6 w-1/4 rounded-full bg-slate-700"></div></div>
-        <div className="flex items-end justify-between mt-8">
-            <div className="w-1/2"><div className="h-4 w-full rounded bg-slate-700 mb-2"></div><div className="h-3 w-2/3 rounded bg-slate-700"></div></div>
-            <div className="w-12 h-12 rounded-full bg-slate-700"></div>
-        </div>
-    </div>
-);
+            <div className="h-px bg-gradient-to-r from-slate-800/50 via-slate-700/50 to-transparent mb-6" />
 
+            {(cert.status !== 'Erreur' && cert.status !== 'En attente' && cert.status !== 'Vérification...') ? (
+                <div className="flex items-center justify-between mt-auto">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-700/50 text-slate-400">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-500 tracking-widest uppercase">Expiration</p>
+                            <p className="text-sm font-bold text-slate-200">{cert.expiry_date ? new Date(cert.expiry_date).toLocaleDateString('fr-FR') : '---'}</p>
+                        </div>
+                    </div>
+                    
+                    {/* Affichage de la Jauge */}
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-blue-500/5 blur-xl rounded-full" />
+                        <ExpirationGauge daysRemaining={daysRemaining} />
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-xl flex items-center gap-3 mt-auto">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {cert.status === 'Vérification...' ? 'Analyse en cours...' : (cert.error_message || cert.status)}
+                    </span>
+                </div>
+            )}
+        </motion.div>
+    );
+};
 
-// --- Composant principal du Dashboard ---
+// --- Composant Principal ---
 export default function DashboardDisplay() {
     const [certificates, setCertificates] = useState<Certificate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -89,139 +130,138 @@ export default function DashboardDisplay() {
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
     const fetchInitialData = useCallback(async () => {
-        if (!isLoading) setIsLoading(true);
         try {
-            const statusRes = await fetch(`${API_URL}/api/status?t=${new Date().getTime()}`).catch(() => null);
-            const domainsRes = await fetch(`${API_URL}/api/domains`).catch(() => null);
+            const [statusRes, domainsRes] = await Promise.all([
+                fetch(`${API_URL}/api/status?t=${Date.now()}`),
+                fetch(`${API_URL}/api/domains`)
+            ]);
             
-            const statuses: Certificate[] = statusRes?.ok ? await statusRes.json().catch(() => []) : [];
-            const { domains }: { domains: string[] } = domainsRes?.ok ? await domainsRes.json().catch(() => ({ domains: [] })) : { domains: [] };
+            const statuses: Certificate[] = statusRes.ok ? await statusRes.json() : [];
+            const { domains }: { domains: string[] } = domainsRes.ok ? await domainsRes.json() : { domains: [] };
+            
             const statusMap = new Map(statuses.map(s => [s.domain, s]));
-
-            const mergedCertificates = domains.map(domain => {
-                const status = statusMap.get(domain);
-                if (status) return status;
-                return { domain, status: 'En attente' } as Certificate;
-            });
-            setCertificates(mergedCertificates);
+            const merged = domains.map(domain => statusMap.get(domain) || { domain, status: 'En attente' } as Certificate);
+            
+            setCertificates(merged);
             setError(null);
         } catch (err) {
-            if (err instanceof Error) { setError(err.message); } 
-            else { setError("Une erreur de type inconnu est survenue."); }
-            setCertificates([]);
+            setError("Impossible de charger les données. Vérifiez la connexion au backend.");
         } finally {
             setIsLoading(false);
         }
-    }, [isLoading]);
+    }, []);
 
     useEffect(() => {
         fetchInitialData();
-        const interval = setInterval(fetchInitialData, 5 * 60 * 1000);
+        const interval = setInterval(fetchInitialData, 60000);
         return () => clearInterval(interval);
     }, [fetchInitialData]);
 
     const handleDomainsAdded = (newDomains: string[]) => {
-        const placeholderCerts: Certificate[] = newDomains.map(domain => ({
-            domain,
-            status: 'Vérification...',
-        }));
-        setCertificates(prevCerts => [...prevCerts, ...placeholderCerts]);
-
-        newDomains.forEach(async (domain) => {
-            try {
-                const res = await fetch(`${API_URL}/api/check/${domain}`);
-                if (!res.ok) throw new Error("La vérification a échoué.");
-                const checkedCert: Certificate = await res.json();
-                setCertificates(prevCerts => 
-                    prevCerts.map(cert => cert.domain === domain ? checkedCert : cert)
-                );
-            } catch (e) {
-                setCertificates(prevCerts => 
-                    prevCerts.map(cert => cert.domain === domain ? { ...cert, status: 'Erreur', error_message: 'Échec de la vérification' } : cert)
-                );
-            }
-        });
+        const placeholders: Certificate[] = newDomains.map(d => ({ domain: d, status: 'Vérification...' }));
+        setCertificates(prev => [...prev, ...placeholders]);
+        fetchInitialData();
     };
-    
+
     const handleDelete = async (domain: string) => {
-        if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${domain} ?`)) return;
-        
-        const toastId = toast.loading(`Suppression de ${domain}...`);
+        if (!window.confirm(`Supprimer la surveillance pour ${domain} ?`)) return;
         try {
-            const response = await fetch(`${API_URL}/api/domains/${domain}`, { method: 'DELETE' });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || "Erreur lors de la suppression.");
+            const res = await fetch(`${API_URL}/api/domains/${domain}`, { method: 'DELETE' });
+            if (res.ok) {
+                toast.success(`${domain} supprimé`);
+                fetchInitialData();
             }
-            toast.success(`Domaine '${domain}' supprimé !`, {id: toastId});
-            await fetchInitialData();
         } catch (err) {
-            toast.dismiss(toastId);
-            if (err instanceof Error) toast.error(err.message);
-            else toast.error("Erreur inconnue lors de la suppression.");
+            toast.error("Erreur lors de la suppression");
         }
     };
 
-    const handleSearch = () => setSearchTerm(inputValue);
-
-    const processedCertificates = useMemo(() => {
+    const filteredAndSorted = useMemo(() => {
         return certificates
-            .filter(cert => cert.domain.toLowerCase().includes(searchTerm.toLowerCase()))
+            .filter(c => c.domain.toLowerCase().includes(searchTerm.toLowerCase()))
             .sort((a, b) => {
-                const aDays = a.days_left ?? (sortDirection === 'asc' ? Infinity : -Infinity);
-                const bDays = b.days_left ?? (sortDirection === 'asc' ? Infinity : -Infinity);
                 if (sortKey === 'days_left') {
-                    return sortDirection === 'asc' ? aDays - bDays : bDays - aDays;
-                } else {
-                    return sortDirection === 'asc' ? a.domain.localeCompare(b.domain) : b.domain.localeCompare(a.domain);
+                    const valA = a.days_left ?? 999;
+                    const valB = b.days_left ?? 999;
+                    return sortDirection === 'asc' ? valA - valB : valB - valA;
                 }
+                return sortDirection === 'asc' ? a.domain.localeCompare(b.domain) : b.domain.localeCompare(a.domain);
             });
     }, [certificates, searchTerm, sortKey, sortDirection]);
 
     return (
-        <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white">
-            <Toaster position="bottom-right" toastOptions={{ className: 'bg-slate-800 text-white border border-slate-700' }}/>
+        <div className="min-h-screen bg-[#0a0f19] text-slate-200 p-6 md:p-12 font-sans">
+            <Toaster position="bottom-right" toastOptions={{ style: { background: '#111827', color: '#fff', border: '1px solid #1e293b' }}} />
+            
             <AddDomainModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onDomainsAdded={handleDomainsAdded} />
             <CertificateDetailModal cert={selectedCert} onClose={() => setSelectedCert(null)} />
-            <div className="max-w-7xl mx-auto">
-                <header className="text-center mb-8">
-                    <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">SSL-Cert-Monitor</h1>
-                    <p className="text-slate-400 mt-2">Votre tour de contrôle pour les certificats SSL/TLS</p>
+
+            <div className="max-w-6xl mx-auto">
+                <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+                    <div className="flex items-center gap-5">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-black text-white tracking-tighter">SSL-Cert-Monitor</h1>
+                            <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em]">Central Control Tower</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-green-900/20"
+                    >
+                        <span className="text-xl">+</span> Ajouter Domaines
+                    </button>
                 </header>
 
-                <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-                     <div className="flex items-center gap-2 w-full md:w-auto flex-grow">
-                        <input type="text" placeholder="Rechercher un domaine..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }} className="w-full max-w-lg pl-4 pr-10 py-3 bg-slate-900/50 backdrop-blur-md border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                        <button onClick={handleSearch} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 font-semibold rounded-lg transition-colors active:scale-95">Rechercher</button>
+                <div className="bg-[#111827]/50 border border-slate-800 p-2 rounded-2xl flex flex-col md:flex-row gap-2 mb-10">
+                    <div className="relative flex-grow">
+                        <input 
+                            type="text" 
+                            placeholder="Rechercher un domaine..." 
+                            className="w-full bg-transparent border-none focus:ring-0 px-4 py-3 text-sm font-medium placeholder-slate-600"
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && setSearchTerm(inputValue)}
+                        />
                     </div>
-                    <div className="flex items-center gap-2 text-sm flex-shrink-0">
-                        <span className="text-slate-400">Trier par:</span>
-                        <button onClick={() => setSortKey('days_left')} className={`px-3 py-1 rounded-md transition-colors ${sortKey === 'days_left' ? 'bg-blue-600 text-white' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600'}`}>Expiration</button>
-                        <button onClick={() => setSortKey('domain')} className={`px-3 py-1 rounded-md transition-colors ${sortKey === 'domain' ? 'bg-blue-600 text-white' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600'}`}>Nom</button>
-                        <button onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')} className="p-2 rounded-md bg-slate-700/50 text-slate-300 hover:bg-slate-600 transition-transform active:scale-90">
+                    <div className="flex items-center gap-1 bg-[#0a0f19] rounded-xl p-1 border border-slate-800">
+                        <button 
+                            onClick={() => setSortKey('days_left')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${sortKey === 'days_left' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Expiration
+                        </button>
+                        <button 
+                            onClick={() => setSortKey('domain')}
+                            className={`px-4 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${sortKey === 'domain' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            Nom
+                        </button>
+                        <button 
+                            onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
+                            className="p-2 text-slate-400 hover:text-white"
+                        >
                             {sortDirection === 'asc' ? '↑' : '↓'}
                         </button>
                     </div>
-                    <button onClick={() => setIsAddModalOpen(true)} className="px-5 py-3 bg-green-600 hover:bg-green-700 font-semibold rounded-lg transition-colors active:scale-95 whitespace-nowrap">Ajouter Domaines</button>
                 </div>
 
-                {error && <div className="text-center py-10 bg-red-900/50 rounded-lg text-red-300">{error}</div>}
-
-                {!error && ( isLoading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
-                        </div>
-                    ) : (
-                        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            <AnimatePresence>
-                                {processedCertificates.length > 0 ? (
-                                    processedCertificates.map((cert) => ( 
-                                        <CertificateCard key={cert.domain} cert={cert} onCardClick={() => setSelectedCert(cert)} onDeleteClick={handleDelete} /> 
-                                    ))
-                                ) : ( <div className="col-span-full text-center py-10"><p className="text-slate-400">Aucun domaine à surveiller. Ajoutez-en un pour commencer !</p></div> )}
-                            </AnimatePresence>
-                        </motion.div>
-                    )
+                {isLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-50">
+                        {[1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-slate-900 rounded-2xl animate-pulse" />)}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <AnimatePresence mode="popLayout">
+                            {filteredAndSorted.map(cert => (
+                                <CertificateCard key={cert.domain} cert={cert} onCardClick={() => setSelectedCert(cert)} onDeleteClick={handleDelete} />
+                            ))}
+                        </AnimatePresence>
+                    </div>
                 )}
             </div>
         </div>

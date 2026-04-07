@@ -1,22 +1,26 @@
-# Fichier: frontend/Dockerfile
-
-# Étape 1: Build de l'application
 FROM node:20-alpine AS builder
+
 WORKDIR /app
+
+# NXH_API_URL reçu en build-arg, mappé vers NEXT_PUBLIC_API_URL
+ARG NXH_API_URL
+ENV NEXT_PUBLIC_API_URL=$NXH_API_URL
+
 COPY package*.json ./
-RUN npm install
+RUN npm ci
+
 COPY . .
 RUN npm run build
 
-# Étape 2: Servir l'application optimisée
+# ─── Image de production ───────────────────────────────────
 FROM node:20-alpine AS runner
+
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
+ENV NODE_ENV=production
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/package*.json ./
 
 EXPOSE 3000
-ENV PORT=3000
-
-CMD ["sh", "-c", "npm start"]
+CMD ["node", "server.js"]
