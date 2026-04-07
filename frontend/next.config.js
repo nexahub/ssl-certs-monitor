@@ -1,11 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-
-  // Force l'utilisation de Webpack au lieu de Turbopack pour le build
-  // Cela permet de conserver ta configuration webpack personnalisée sans erreur.
+  turbopack: {},   // ← ajoute cette ligne
   webpack: (config, { dev }) => {
-    // Ta config HMR/Polling pour le développement
     if (dev) {
       config.watchOptions = {
         poll: 1000,
@@ -14,7 +11,6 @@ const nextConfig = {
     }
     return config;
   },
-
   async headers() {
     return [
       {
@@ -27,5 +23,4 @@ const nextConfig = {
     ];
   },
 };
-
 module.exports = nextConfig;
