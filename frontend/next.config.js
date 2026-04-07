@@ -1,17 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  
-  // 1. Supprimé 'optimizeFonts' car c'est obsolète/invalide en v16
-  
-  // 2. Ajout de cette ligne pour dire à Next.js d'accepter ta config webpack 
-  // même sous l'ère Turbopack, ou pour désactiver l'erreur.
-  experimental: {
-    turbo: {
-      // Tu peux configurer des règles ici si nécessaire
-    },
-  },
 
+  // Force l'utilisation de Webpack au lieu de Turbopack pour le build
+  // Cela permet de conserver ta configuration webpack personnalisée sans erreur.
   webpack: (config, { dev }) => {
     // Ta config HMR/Polling pour le développement
     if (dev) {
