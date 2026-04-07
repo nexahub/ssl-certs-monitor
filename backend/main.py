@@ -1,6 +1,9 @@
 import os
 import ssl
 import socket
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -18,19 +21,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- CONFIGURATION DATABASE ---
-# Récupération des variables avec valeurs par défaut
 DB_USER = os.getenv("NXH_DATABASE_USER", "test")
 DB_PASSWORD = os.getenv("NXH_DATABASE_PASSWORD", "test")
 DB_HOST = os.getenv("NXH_DATABASE_HOST", "localhost")
 DB_PORT = os.getenv("NXH_DATABASE_PORT", "3306")
 DB_NAME = os.getenv("NXH_DATABASE_NAME", "test")
 
-# Construction de l'URL de connexion MySQL pour SQLAlchemy
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# --- CONFIGURATION EMAIL ---
+SMTP_SERVER = os.getenv("NXH_SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("NXH_SMTP_PORT", 587))
+SMTP_SENDER = os.getenv("NXH_SMTP_SENDER_EMAIL", "")
+SMTP_PASSWORD = os.getenv("NXH_SMTP_PASSWORD", "")
+ALERT_RECIPIENTS = os.getenv("NXH_ALERT_RECIPIENTS", "")
 
 # --- MODÈLE SQLALCHEMY (Base de données) ---
 class Domain(Base):
@@ -39,8 +47,6 @@ class Domain(Base):
     hostname = Column(String(255), unique=True, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-# Créer les tables au démarrage (si elles n'existent pas)
-# Note : La base de données `DB_NAME` doit déjà exister dans MySQL.
 Base.metadata.create_all(bind=engine)
 
 # --- SCHÉMAS PYDANTIC (Validation API) ---
@@ -61,7 +67,6 @@ def get_db():
 # --- INITIALISATION API ---
 app = FastAPI(title="SSL Certs Monitor API")
 
-# Récupération de l'URL Frontend pour les CORS
 ALLOWED_ORIGINS = os.getenv("NXH_API_URL", "*").split(",")
 
 app.add_middleware(
@@ -71,6 +76,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- LOGIQUE MÉTIER (EMAIL ALERT) ---
+def send_alert_email(domain: str, days_remaining: int, expiry_date: str, status: str):
+    """Envoie un email d'alerte si le certificat expire bientôt ou est expiré."""
+    if not SMTP_SENDER or not SMTP_PASSWORD or not ALERT_RECIPIENTS:
+        print("⚠️ Configuration SMTP manquante. L'alerte email n'a pas pu être envoyée.")
+        return
+
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_SENDER
+    msg['To'] = ALERT_RECIPIENTS
+
+    if status == "expired":
+        msg['Subject'] = f"🚨 URGENT : Le certificat SSL pour {domain} EST EXPIRÉ !"
+        body = f"Bonjour,\n\nLe certificat SSL pour le domaine {domain} est expiré depuis le {expiry_date}.\nIl est urgent de le renouveler.\n\nCordialement,\nSSL Monitor API"
+    else:
+        msg['Subject'] = f"⚠️ Alerte SSL : Le certificat pour {domain} expire dans {days_remaining} jours"
+        body = f"Bonjour,\n\nLe certificat SSL pour le domaine {domain} va expirer le {expiry_date} (dans {days_remaining} jours).\nPensez à le renouveler.\n\nCordialement,\nSSL Monitor API"
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_SENDER, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print(f"✅ Email d'alerte envoyé pour {domain}")
+    except Exception as e:
+        print(f"❌ Erreur lors de l'envoi de l'email pour {domain} : {str(e)}")
 
 # --- LOGIQUE MÉTIER (SSL CHECK) ---
 def check_ssl_certificate(domain: str) -> dict:
@@ -82,7 +117,6 @@ def check_ssl_certificate(domain: str) -> dict:
 
         cert = x509.load_der_x509_certificate(cert_der, default_backend())
 
-        # Gestion des versions Python pour l'expiration
         try:
             expiry_date = cert.not_valid_after_utc
             now = datetime.now(timezone.utc)
@@ -142,7 +176,6 @@ def add_domain(payload: DomainCreate, db: Session = Depends(get_db)):
     if not domain_name:
         raise HTTPException(status_code=400, detail="Domaine invalide")
     
-    # Vérifier l'existence
     existing = db.query(Domain).filter(Domain.hostname == domain_name).first()
     if existing:
         return {"message": "Domaine déjà présent", "domain": domain_name}
@@ -185,7 +218,21 @@ def check_single_domain(domain_name: str):
 
 @app.get("/api/check-all")
 def check_all_domains(db: Session = Depends(get_db)):
-    """Force une vérification de tous les domaines enregistrés."""
+    """Force une vérification de tous les domaines et alerte par email si besoin."""
     db_domains = db.query(Domain).all()
-    results = [check_ssl_certificate(d.hostname) for d in db_domains]
+    results = []
+    
+    for d in db_domains:
+        res = check_ssl_certificate(d.hostname)
+        results.append(res)
+        
+        # Envoi d'email uniquement si le statut est warning ou expired
+        if res.get("status") in ["warning", "expired"]:
+            send_alert_email(
+                domain=res["domain"],
+                days_remaining=res.get("days_remaining", 0),
+                expiry_date=res.get("expiry_date", "Inconnue"),
+                status=res["status"]
+            )
+            
     return {"results": results}
