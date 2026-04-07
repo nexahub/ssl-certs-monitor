@@ -1,9 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-
-  // Désactive le preload automatique des polices pour éviter l'avertissement
   optimizeFonts: false,
+
+  // Force le port HMR à suivre le port du dev server
+  // pour éviter les erreurs WebSocket quand on change de port
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        poll: 1000,
+        aggregateTimeout: 300,
+      };
+    }
+    return config;
+  },
 
   async headers() {
     return [

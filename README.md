@@ -77,7 +77,7 @@ The application consists of a backend service for certificate checking and a fro
 
 3. Run the backend server:
    ```
-   uvicorn main:app --reload
+   uvicorn main:app --reload   or   python -m uvicorn main:app --reload
    ```
 
 #### Frontend Setup
