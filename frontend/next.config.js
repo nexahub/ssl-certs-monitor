@@ -1,11 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  optimizeFonts: false,
+  
+  // 1. Supprimé 'optimizeFonts' car c'est obsolète/invalide en v16
+  
+  // 2. Ajout de cette ligne pour dire à Next.js d'accepter ta config webpack 
+  // même sous l'ère Turbopack, ou pour désactiver l'erreur.
+  experimental: {
+    turbo: {
+      // Tu peux configurer des règles ici si nécessaire
+    },
+  },
 
-  // Force le port HMR à suivre le port du dev server
-  // pour éviter les erreurs WebSocket quand on change de port
   webpack: (config, { dev }) => {
+    // Ta config HMR/Polling pour le développement
     if (dev) {
       config.watchOptions = {
         poll: 1000,
