@@ -8,7 +8,9 @@ import { Certificate } from './DashboardDisplay';
 
 const API_URL = typeof window !== 'undefined' && process.env.NXH_API_URL
   ? process.env.NXH_API_URL
-  : (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000");
+  : (typeof window !== 'undefined' 
+      ? `${window.location.protocol}//${window.location.hostname}${window.location.hostname === 'localhost' ? ':8000' : ''}` 
+      : "http://localhost:8000");
 
 // La prop attend bien un tableau de string[]
 interface AddDomainModalProps {
